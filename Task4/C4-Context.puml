@@ -1,0 +1,32 @@
+@startuml
+!includeurl https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Context.puml
+
+LAYOUT_LEFT_RIGHT()
+SHOW_PERSON_OUTLINE()
+' skinparam linetype ortho
+
+title TO-BE (MVP): Контекст — передача ставок в кол-центры
+
+Person(customer, "Клиент", "Звонит, уточняет условия депозитов")
+Person(ccOp, "Оператор внутреннего кол-центра", "Консультирует по ставкам")
+Person(partnerOp, "Оператор партнёрского кол-центра", "Консультирует по ставкам (внешний подрядчик)")
+Person(ratesAdmin, "Администратор ставок", "Обновляет ставки и правила")
+
+System_Boundary(bank, "Банк 'Стандарт'") {
+  System(rates, "Единый источник ставок (Rates Service)", "Сервис ставок и правил, версии публикаций")
+  System(ccSys, "Система внутреннего кол-центра", "CRM/контакт-центр банка, UI оператора")
+  System(portal, "Secure File Portal", "Защищённая витрина файлов ставок для партнёра (HTTPS)")
+}
+
+System_Ext(partnerCC, "Система партнёрского кол-центра", "Система подрядчика, импорт ставок из файлов")
+
+Rel(customer, ccOp, "Звонит, спрашивает ставки", "Телефон")
+Rel(ccOp, ccSys, "Работает в интерфейсе", "Web UI")
+Rel(ccSys, rates, "Запрашивает ставки", "REST (TLS)")
+
+Rel(ratesAdmin, rates, "Публикует/обновляет ставки", "Web UI / Admin API")
+
+Rel(rates, portal, "Публикует файл ставок (версия, манифест)", "Внутр. интеграция")
+Rel(portal, partnerCC, "Партнёр скачивает файл ставок", "HTTPS download")
+Rel(partnerOp, partnerCC, "Консультация по ставкам", "UI партнёра")
+@enduml

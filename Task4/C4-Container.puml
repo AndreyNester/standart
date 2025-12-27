@@ -1,0 +1,41 @@
+@startuml
+!includeurl https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+LAYOUT_LEFT_RIGHT()
+SHOW_PERSON_OUTLINE()
+' skinparam linetype ortho
+
+title TO-BE (MVP): Контейнеры — сервис ставок + выгрузки для партнёра
+
+Person(ccOp, "Оператор внутреннего кол-центра", "Консультации по ставкам")
+Person(ratesAdmin, "Администратор ставок", "Управляет ставками")
+
+System_Boundary(bank, "Банк 'Стандарт'") {
+
+  Container(ccSys, "Система внутреннего кол-центра", "Java/.NET + PostgreSQL", "UI и процессы операторов")
+
+  Container_Boundary(ratesBound, "Контур 'Rates'") {
+    Container(ratesApi, "Rates API", "Java/.NET", "Чтение ставок, версии, RBAC")
+    ContainerDb(ratesDb, "Rates DB", "Oracle/MS SQL", "Справочники ставок, правила, версии")
+    Container(ratesCache, "Rates Cache", "Redis/In-memory", "Ускорение чтения ставок (опц.)")
+
+    Container(ratesExporter, "Rates Exporter", "Java/.NET", "Генерация файлов ставок по расписанию/по событию")
+    Container(portal, "Secure File Portal", "Nginx/IIS + Storage", "HTTPS витрина файлов, аудит скачиваний")
+    ContainerDb(portalDb, "Portal Audit DB", "MS SQL/PostgreSQL", "Журнал публикаций/скачиваний/статусов")
+  }
+}
+
+System_Ext(partnerCC, "Партнёрский кол-центр (система)", "Импорт ставок из файлов")
+
+Rel(ccOp, ccSys, "Работа в UI", "Web")
+Rel(ccSys, ratesApi, "Запрос ставок", "REST (TLS)")
+
+Rel(ratesAdmin, ratesApi, "Публикация/управление ставками", "Admin UI/API (TLS)")
+Rel(ratesApi, ratesDb, "Чтение/запись", "DB")
+Rel(ratesApi, ratesCache, "Кэширование чтения", "TCP")
+
+Rel(ratesExporter, ratesDb, "Ч [версии] и данные ставок", "DB")
+Rel(ratesExporter, portal, "Публикация файлов (CSV/JSON + checksum + manifest)", "Internal")
+Rel(portal, portalDb, "Аудит и статусы", "DB")
+Rel(portal, partnerCC, "Скачивание файла", "HTTPS download")
+@enduml
