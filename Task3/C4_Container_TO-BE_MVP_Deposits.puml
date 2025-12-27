@@ -1,0 +1,82 @@
+@startuml
+!includeurl https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+' skinparam linetype ortho
+LAYOUT_LEFT_RIGHT()
+SHOW_PERSON_OUTLINE()
+
+title TO-BE (MVP): Контейнеры — онлайн-заявка на депозит (детализация ИБ и АБС)
+
+Person(customer, "Клиент", "Подаёт заявку (ИБ/сайт)")
+Person(callMgr, "Менеджер кол-центра", "Обрабатывает лиды")
+Person(depBack, "Бэк-офис депозитов", "Ручная обработка (MVP)")
+
+System_Ext(smsGw, "SMS-шлюз телеком-оператора", "OTP и уведомления")
+
+System_Boundary(bank, "Банк 'Стандарт' ") {
+
+  Container(websiteFE, "Сайт (Frontend)", "React", "Страница депозитов, форма лида")
+  Container(websiteBE, "Сайт (Backend)", "PHP", "API сайта, валидация лида")
+  Rel(customer, websiteFE, "Смотрит/отправляет заявку", "HTTPS")
+  Rel(websiteFE, websiteBE, "API вызовы", "HTTPS")
+
+  Container_Boundary(ibBound, "Интернет-банк (монолит)") {
+    Container(ibWeb, "IB Web UI", "ASP.NET MVC", "ЛК клиента, выбор депозита/счёта/суммы")
+    Container(ibCore, "IB Backend (ядро/бизнес-логика)", ".NET Framework 4.5", "Сессии, операции, интеграции")
+    ContainerDb(ibDb, "IB DB", "MS SQL", "Данные интернет-банка")
+
+    ' SMS уже есть в ядре — используем существующее
+    Rel(customer, ibWeb, "Работа в интернет-банке", "HTTPS")
+    Rel(ibWeb, ibCore, "Вызовы контроллеров/сервисов", "In-process")
+    Rel(ibCore, ibDb, "Чтение/запись", "TDS")
+    Rel(ibCore, smsGw, "OTP подтверждение заявки", "Интеграция (защ.канал)")
+  }
+
+  Container(ccSys, "Система кол-центра", "React + Java + PostgreSQL", "Обработка лидов/звонков")
+
+  Container_Boundary(mvp, "Контур MVP 'Депозиты онлайн' ") {
+    Container(apiGw, "Deposit API Gateway", "Java/.NET", "Единая точка входа для каналов, auth, rate-limit, идемпотентность")
+    Container(appSvc, "Application Service (Сервис заявок)", "Java/.NET", "Реестр заявок, статусы, маршрутизация, гарантированная доставка")
+    ContainerDb(appDb, "Application DB", "MS SQL / PostgreSQL", "Хранение заявок и статусов")
+
+    Container(ratesSvc, "Rates Service (Источник ставок)", "Java/.NET", "Ставки/правила, персонализация, кэш")
+    ContainerDb(ratesDb, "Rates DB", "Oracle / MS SQL", "Справочники ставок и правил")
+
+    ' Для гарантированной доставки — очередь (Kafka в перспективе, но в MVP можно совместимую)
+    ContainerQueue(mq, "Message Queue", "RabbitMQ/ActiveMQ (MVP)", "Надёжная доставка событий/заявок, ретраи, DLQ")
+
+    Container(absAdapter, "ABS Adapter", "Java/.NET", "Интеграция с АБС: запись заявки/статуса, минимизация нагрузки")
+  }
+
+  Container_Boundary(absBound, "АБС") {
+    Container(absClient, "ABS Desktop Client", "Delphi", "Рабочее место сотрудников")
+    ContainerDb(absDb, "ABS DB", "Oracle (PL/SQL)", "Учёт, депозиты, операции")
+    Rel(absClient, absDb, "Работа с данными/процедурами", "Oracle")
+  }
+
+  ' --- Интеграции ---
+  ' Сайт
+  Rel(websiteBE, ratesSvc, "Получает список депозитов/ставок", "REST (TLS)")
+  Rel(websiteBE, ccSys, "Передает лид (ФИО, телефон)", "REST (TLS)")
+
+  ' Интернет-банк: НЕТ прямых вызовов к АБС
+  Rel(ibCore, apiGw, "Передает подтвержденную заявку; запрашивает условия", "REST (TLS)")
+  Rel(apiGw, appSvc, "Команды/запросы по заявкам (идемпотентно)", "HTTP/gRPC")
+  Rel(appSvc, appDb, "CRUD заявок/статусов", "DB")
+  Rel(apiGw, ratesSvc, "Получить ставки/условия", "HTTP/gRPC")
+  Rel(ratesSvc, ratesDb, "Чтение ставок/правил", "DB")
+
+  ' Асинхронная доставка в АБС
+  Rel(appSvc, mq, "Публикует события/заявки", "AMQP")
+  Rel(mq, absAdapter, "Доставка сообщений", "AMQP")
+  Rel(absAdapter, absDb, "Создание/обновление записи заявки (минимально)", "Oracle (через согласованные процедуры/интерфейс)")
+
+  ' Ручная обработка MVP
+  Rel(depBack, absClient, "Обрабатывает заявку, открывает депозит (MVP)", "GUI")
+  Rel(absDb, smsGw, "Триггер уведомления клиенту", "Интеграция")
+
+  ' Кол-центр
+  Rel(callMgr, ccSys, "Работа с лидами", "Web UI")
+}
+
+@enduml
